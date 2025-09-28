@@ -84,7 +84,7 @@ public class Device
     }
 
     /// <summary>
-    /// 设置指定像素颜色 考虑裁剪
+    /// 置指定像素颜色 考虑裁剪设
     /// </summary>
     /// <param name="point"></param>
     public void DrawPoint(Vector2 point)
@@ -92,6 +92,52 @@ public class Device
         if (point.X >= 0 && point.Y >= 0 && point.X < bmp.PixelWidth && point.Y < bmp.PixelHeight)
             // TODO:颜色先写死
             PutPixel((int)point.X, (int)point.Y, new Color4(1, 1, 0, 1));
+    }
+
+    /// <summary>
+    /// 画线
+    /// </summary>
+    /// <param name="p0"></param>
+    /// <param name="p1"></param>
+    public void DrawLine(Vector2 p0, Vector2 p1)
+    {
+        var dis = (p1 - p0).Length();
+        // 小于两像素 停止画线
+        if(dis < 2) return;
+        // 中间点
+        var midP = p0 + (p1 - p0) / 2;
+        DrawPoint(midP);
+        // 画两边
+        DrawLine(p0,midP);
+        DrawLine(midP,p1);
+    }
+    
+    /// <summary>
+    /// Bresenham 算法画直线
+    /// </summary>
+    /// <param name="point0"></param>
+    /// <param name="point1"></param>
+    public void DrawBLine(Vector2 point0, Vector2 point1)
+    {
+        int x0 = (int)point0.X;
+        int y0 = (int)point0.Y;
+        int x1 = (int)point1.X;
+        int y1 = (int)point1.Y;
+            
+        var dx = Math.Abs(x1 - x0);
+        var dy = Math.Abs(y1 - y0);
+        var sx = (x0 < x1) ? 1 : -1;
+        var sy = (y0 < y1) ? 1 : -1;
+        var err = dx - dy;
+
+        while (true) {
+            DrawPoint(new Vector2(x0, y0));
+
+            if ((x0 == x1) && (y0 == y1)) break;
+            var e2 = 2 * err;
+            if (e2 > -dy) { err -= dy; x0 += sx; }
+            if (e2 < dx) { err += dx; y0 += sy; }
+        }
     }
 
     public void Render(Camera camera,params Mesh[] meshes)
@@ -108,12 +154,19 @@ public class Device
                                   mesh.Rotation.X, mesh.Rotation.Z) * Matrix.Translation(mesh.Position);
             var transformMatrix = worldMatrix * viewMatrix * projectionMatrix;
             
-            foreach (var vertex in mesh.Vertices)
+            foreach(var face in mesh.Faces)
             {
+                var verA = mesh.Vertices[face.A];
+                var verB = mesh.Vertices[face.B];
+                var verC = mesh.Vertices[face.C];
                 // 转换到2d屏幕空间
-                var point = Project(vertex, transformMatrix);
+                var point1 = Project(verA, transformMatrix);
+                var point2 = Project(verB, transformMatrix);
+                var point3 = Project(verC, transformMatrix);
                 // 绘制到屏幕上
-                DrawPoint(point);
+                DrawBLine(point1,point2);
+                DrawBLine(point2,point3);
+                DrawBLine(point3,point1);
             }
         }
     }
