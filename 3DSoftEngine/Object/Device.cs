@@ -149,6 +149,7 @@ public class Device
     /// <param name="p2"></param>
     /// <param name="p3"></param>
     /// <param name="p4"></param>
+    /// <param name="color"></param>
     private void _drawScanLine(int curY, Vector3 p1, Vector3 p2, Vector3 p3, Vector3 p4,Color4 color)
     {
         // y轴当前进度

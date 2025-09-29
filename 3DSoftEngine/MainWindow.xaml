@@ -7,6 +7,16 @@
         mc:Ignorable="d"
         Title="MainWindow" Height="450" Width="800">
     <Grid>
+        <!-- FPS 显示文本框 -->
+        <TextBlock x:Name="fpsTextBlock" 
+                   HorizontalAlignment="Right" 
+                   VerticalAlignment="Top"
+                   Margin="10"
+                   Foreground="White"
+                   Background="#80000000"
+                   Padding="5"
+                   FontSize="14"
+                   Text="0.00 fps"/>
         <Image x:Name="frontBuffer" Stretch="Uniform" />
     </Grid>
 </Window>

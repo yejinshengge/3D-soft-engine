@@ -13,6 +13,7 @@ public partial class MainWindow : Window
     private Device _device;
     private Mesh[] _meshes;
     private Camera _camera = new ();
+    private DateTime _preTime;
     
     public MainWindow()
     {
@@ -40,9 +41,15 @@ public partial class MainWindow : Window
         // 5. 注册 WPF 渲染循环事件
         CompositionTarget.Rendering += _onRendering;
     }
-
+    
     private void _onRendering(object? sender, EventArgs e)
     {
+        // 计算FPS
+        var now = DateTime.Now;
+        var curFps = 1000f/(now - _preTime).TotalMilliseconds;
+        _preTime = now;
+        fpsTextBlock.Text = string.Format("{0:0.00}", curFps);
+        
         // 清空缓冲区
         _device.Clear(0,0,0,255);
         // 执行旋转
