@@ -1,3 +1,4 @@
+using System.IO;
 using System.Windows;
 using System.Windows.Media.Imaging;
 using SharpDX;
@@ -138,6 +139,86 @@ public class Device
             if (e2 > -dy) { err -= dy; x0 += sx; }
             if (e2 < dx) { err += dx; y0 += sy; }
         }
+    }
+
+    /// <summary>
+    /// 从JSON文件获取网格
+    /// </summary>
+    /// <param name="fileName"></param>
+    /// <returns></returns>
+    public async Task<Mesh[]> LoadMeshFromJSONFile(string fileName)
+    {
+        var meshes = new List<Mesh>();
+        // 获取工程根目录路径
+        string currentDirectory = AppDomain.CurrentDomain.BaseDirectory;
+        string filePath = Path.Combine(currentDirectory, fileName);
+        
+        if (!File.Exists(filePath))
+        {
+            throw new FileNotFoundException($"文件未找到: {filePath}");
+        }
+        
+        // 异步读取JSON文件
+        string jsonContent = await File.ReadAllTextAsync(filePath);
+        var jsonObject = Newtonsoft.Json.JsonConvert.DeserializeObject<Babylon>(jsonContent);
+
+        for (int i = 0; i < jsonObject.meshes.Count; i++)
+        {
+            var meshData = jsonObject.meshes[i];
+            // 顶点
+            var vertices = meshData.vertices;
+            // 面的顶点
+            var indices = meshData.indices;
+            // uv数量
+            var uvCnt = meshData.uvCount;
+            // 步长
+            var step = 1;
+            
+            // 根据uv数量调整步长
+            switch (uvCnt)
+            {
+                case 0:
+                    step = 6;
+                    break;
+                case 1:
+                    step = 8;
+                    break;
+                case 2:
+                    step = 10;
+                    break;
+            }
+            
+            // 实际的顶点数量
+            var verticesCnt = vertices.Count / step;
+            // 面的数量
+            var faceCnt = indices.Count / 3;
+
+            var mesh = new Mesh(meshData.name, verticesCnt, faceCnt);
+
+            // 填充顶点坐标
+            for (int j = 0; j < verticesCnt; j++)
+            {
+                var x = vertices[j * step];
+                var y = vertices[j * step + 1];
+                var z = vertices[j * step + 2];
+                mesh.Vertices[j] = new Vector3(x, y, z);
+            }
+            
+            // 填充面数据
+            for (int j = 0; j < faceCnt; j++)
+            {
+                var a = indices[j * 3];
+                var b = indices[j * 3 + 1];
+                var c = indices[j * 3 + 2];
+                mesh.Faces[j] = new Face() { A = a, B = b, C = c };
+            }
+            // 设置位置
+            var pos = meshData.position;
+            mesh.Position = new Vector3(pos[0], pos[1], pos[2]);
+            meshes.Add(mesh);
+        }
+
+        return meshes.ToArray();
     }
 
     public void Render(Camera camera,params Mesh[] meshes)
