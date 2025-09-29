@@ -48,7 +48,7 @@ public partial class MainWindow : Window
         // 执行旋转
         foreach (var mesh in _meshes)
         {
-            mesh.Rotation = new Vector3(mesh.Rotation.X + 0.01f, mesh.Rotation.Y + 0.01f, mesh.Rotation.Z);
+            mesh.Rotation = new Vector3(mesh.Rotation.X, mesh.Rotation.Y + 0.01f, mesh.Rotation.Z);
         }
         // 填充到缓冲区
         _device.Render(_camera,_meshes);

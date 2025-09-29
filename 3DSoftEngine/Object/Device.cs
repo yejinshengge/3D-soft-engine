@@ -9,8 +9,11 @@ public class Device
 {
     // 后备缓冲区
     private byte[] backBuffer;
+    // 深度缓冲区
+    private float[] depthBuffer;
     // 步长 每行像素所占字节数
     private int backBufferStride;
+    
     private WriteableBitmap bmp;
 
     public Device(WriteableBitmap bmp)
@@ -19,10 +22,11 @@ public class Device
         backBufferStride = bmp.PixelWidth * 4;
         // 长*宽*4(RGBA)
         backBuffer = new byte[backBufferStride * bmp.PixelHeight];
+        depthBuffer = new float[bmp.PixelWidth* bmp.PixelHeight];
     }
 
     /// <summary>
-    /// 将缓冲区置为同一颜色
+    /// 重置缓冲区
     /// </summary>
     /// <param name="r"></param>
     /// <param name="g"></param>
@@ -30,6 +34,7 @@ public class Device
     /// <param name="a"></param>
     public void Clear(byte r, byte g, byte b, byte a)
     {
+        // 重置后备缓冲区
         for (int i = 0; i < backBuffer.Length; i += 4)
         {
             // Windows 使用 BGRA 格式
@@ -37,6 +42,11 @@ public class Device
             backBuffer[i + 1] = g;
             backBuffer[i + 2] = r;
             backBuffer[i + 3] = a;
+        }
+        // 重置深度缓冲区
+        for (int i = 0; i < depthBuffer.Length; i++)
+        {
+            depthBuffer[i] = float.MaxValue;
         }
     }
     
@@ -61,18 +71,30 @@ public class Device
     /// </summary>
     /// <param name="x"></param>
     /// <param name="y"></param>
+    /// <param name="z"></param>
     /// <param name="color"></param>
-    public void PutPixel(int x, int y, Color4 color)
+    public void PutPixel(int x, int y,float z, Color4 color)
     {
-        int index = (x + y * bmp.PixelWidth) * 4;
-        backBuffer[index] = (byte)(color.Blue * 255);
-        backBuffer[index + 1] = (byte)(color.Green * 255);
-        backBuffer[index + 2] = (byte)(color.Red * 255);
-        backBuffer[index + 3] = (byte)(color.Alpha * 255);
+        int index = x + y * bmp.PixelWidth;
+        int index4 = index * 4;
+        // 深度大于缓存值,不渲染
+        if(z > depthBuffer[index]) return;
+        // 设置后备缓冲区
+        backBuffer[index4] = (byte)(color.Blue * 255);
+        backBuffer[index4 + 1] = (byte)(color.Green * 255);
+        backBuffer[index4 + 2] = (byte)(color.Red * 255);
+        backBuffer[index4 + 3] = (byte)(color.Alpha * 255);
+        // 设置深度缓冲区
+        depthBuffer[index] = z;
     }
     
-    // 将3D坐标转为2D屏幕坐标
-    public Vector2 Project(Vector3 coord, Matrix transMat)
+    /// <summary>
+    /// 投影
+    /// </summary>
+    /// <param name="coord"></param>
+    /// <param name="transMat"></param>
+    /// <returns></returns>
+    public Vector3 Project(Vector3 coord, Matrix transMat)
     {
         // 矩阵变换
         var point = Vector3.TransformCoordinate(coord, transMat);
@@ -81,64 +103,146 @@ public class Device
         var x = point.X * bmp.PixelWidth + bmp.PixelWidth / 2.0f;
         // 取反是因为标准化空间中y轴正方向向上,而屏幕坐标中y轴正方向向下
         var y = -point.Y * bmp.PixelHeight + bmp.PixelHeight / 2.0f;
-        return new Vector2(x, y);
+        return new Vector3(x, y,point.Z);
     }
 
     /// <summary>
     /// 置指定像素颜色 考虑裁剪设
     /// </summary>
     /// <param name="point"></param>
-    public void DrawPoint(Vector2 point)
+    /// <param name="color"></param>
+    public void DrawPoint(Vector3 point,Color4 color)
     {
         if (point.X >= 0 && point.Y >= 0 && point.X < bmp.PixelWidth && point.Y < bmp.PixelHeight)
-            // TODO:颜色先写死
-            PutPixel((int)point.X, (int)point.Y, new Color4(1, 1, 0, 1));
+            PutPixel((int)point.X, (int)point.Y, point.Z, color);
+    }
+    
+    /// <summary>
+    /// 限制值
+    /// </summary>
+    /// <param name="tar"></param>
+    /// <param name="min"></param>
+    /// <param name="max"></param>
+    /// <returns></returns>
+    private float _clamp(float tar, float min = 0f, float max = 1f)
+    {
+        return Math.Max(min, Math.Min(tar, max));
+    }
+
+    /// <summary>
+    /// 取插值
+    /// </summary>
+    /// <param name="min"></param>
+    /// <param name="max"></param>
+    /// <param name="percent"></param>
+    /// <returns></returns>
+    private float _interpolate(float min, float max, float percent)
+    {
+        return min + (max - min) * _clamp(percent);
     }
 
     /// <summary>
     /// 画线
     /// </summary>
-    /// <param name="p0"></param>
+    /// <param name="curY"></param>
     /// <param name="p1"></param>
-    public void DrawLine(Vector2 p0, Vector2 p1)
+    /// <param name="p2"></param>
+    /// <param name="p3"></param>
+    /// <param name="p4"></param>
+    private void _drawScanLine(int curY, Vector3 p1, Vector3 p2, Vector3 p3, Vector3 p4,Color4 color)
     {
-        var dis = (p1 - p0).Length();
-        // 小于两像素 停止画线
-        if(dis < 2) return;
-        // 中间点
-        var midP = p0 + (p1 - p0) / 2;
-        DrawPoint(midP);
-        // 画两边
-        DrawLine(p0,midP);
-        DrawLine(midP,p1);
-    }
-    
-    /// <summary>
-    /// Bresenham 算法画直线
-    /// </summary>
-    /// <param name="point0"></param>
-    /// <param name="point1"></param>
-    public void DrawBLine(Vector2 point0, Vector2 point1)
-    {
-        int x0 = (int)point0.X;
-        int y0 = (int)point0.Y;
-        int x1 = (int)point1.X;
-        int y1 = (int)point1.Y;
-            
-        var dx = Math.Abs(x1 - x0);
-        var dy = Math.Abs(y1 - y0);
-        var sx = (x0 < x1) ? 1 : -1;
-        var sy = (y0 < y1) ? 1 : -1;
-        var err = dx - dy;
+        // y轴当前进度
+        var percent1 = p1.Y != p2.Y ? (curY - p1.Y) / (p2.Y - p1.Y) : 1;
+        var percent2 = p3.Y != p4.Y ? (curY - p3.Y) / (p4.Y - p3.Y) : 1;
+        
+        // 根据进度得出x起点和终点
+        var x1 = (int)_interpolate(p1.X, p2.X, percent1);
+        var x2 = (int)_interpolate(p3.X, p4.X, percent2);
 
-        while (true) {
-            DrawPoint(new Vector2(x0, y0));
+        // 根据进度得出z起点和终点
+        var z1 = _interpolate(p1.Z, p2.Z, percent1);
+        var z2 = _interpolate(p3.Z, p4.Z, percent2);
 
-            if ((x0 == x1) && (y0 == y1)) break;
-            var e2 = 2 * err;
-            if (e2 > -dy) { err -= dy; x0 += sx; }
-            if (e2 < dx) { err += dx; y0 += sy; }
+        for (int x = x1; x < x2; x++)
+        {
+            // 根据进度得出z位置
+            var percent = (x - x1) / (float)(x2 - x1);
+            var z = _interpolate(z1, z2, percent);
+            DrawPoint(new Vector3(x,curY,z),color);
         }
+    }
+
+    /// <summary>
+    /// 画三角形
+    /// </summary>
+    /// <param name="p1"></param>
+    /// <param name="p2"></param>
+    /// <param name="p3"></param>
+    /// <param name="color"></param>
+    private void _drawTriangle(Vector3 p1,Vector3 p2,Vector3 p3,Color4 color)
+    {
+        // 按y轴排序 p1 p2 p3
+        // 因为是屏幕坐标,所以y越小越靠上
+        if (p1.Y > p2.Y) (p1, p2) = (p2, p1);
+        if (p2.Y > p3.Y) (p2, p3) = (p3, p2);
+        if (p1.Y > p2.Y) (p1, p2) = (p2, p1);
+        
+        // 计算斜率
+        float dP1P2, dP1P3;
+        if (p2.Y - p1.Y > 0)
+            dP1P2 = (p2.X - p1.X) / (p2.Y - p1.Y);
+        else
+            dP1P2 = 0;
+
+        if (p3.Y - p1.Y > 0)
+            dP1P3 = (p3.X - p1.X) / (p3.Y - p1.Y);
+        else
+            dP1P3 = 0;
+
+        // p2在右边
+        //     P1
+        //    -
+        //    -- 
+        //   - -
+        //   -  -
+        //  -   - P2
+        //  -  -
+        // - -
+        // -
+        // P3
+        if (dP1P2 > dP1P3)
+        {
+            for (int y = (int)p1.Y; y <= (int)p3.Y; y++)
+            {
+                // 画上半部分
+                if(y < p2.Y) _drawScanLine(y,p1,p3,p1,p2,color);
+                // 画下半部分
+                else _drawScanLine(y,p1,p3,p2,p3,color);
+            }
+        }
+        // p2在右边
+        //            P1
+        //            -
+        //           -- 
+        //         - -
+        //        -  -
+        //   P2 -   - 
+        //       -  -
+        //       - -
+        //         -
+        //       P3
+        else
+        {
+            for (int y = (int)p1.Y; y <= (int)p3.Y; y++)
+            {
+                // 画上半部分
+                if(y < p2.Y) _drawScanLine(y,p1,p2,p1,p3,color);
+                // 画下半部分
+                else _drawScanLine(y,p2,p3,p1,p3,color);
+            }
+        }
+
+
     }
 
     /// <summary>
@@ -227,7 +331,8 @@ public class Device
         var viewMatrix = Matrix.LookAtLH(camera.Position, camera.Target, Vector3.UnitY);
         // 创建投影矩阵
         var projectionMatrix = Matrix.PerspectiveFovLH(0.78f, (float)bmp.PixelWidth / bmp.PixelHeight, 0.01f, 1.0f);
-        
+
+        var faceIndex = 0;
         foreach (var mesh in meshes)
         {
             // 创建世界坐标变换矩阵
@@ -245,9 +350,10 @@ public class Device
                 var point2 = Project(verB, transformMatrix);
                 var point3 = Project(verC, transformMatrix);
                 // 绘制到屏幕上
-                DrawBLine(point1,point2);
-                DrawBLine(point2,point3);
-                DrawBLine(point3,point1);
+                // 随机一个颜色
+                var color = 0.25f + (faceIndex % mesh.Faces.Length) * 0.75f / mesh.Faces.Length;
+                _drawTriangle(point1,point2,point3,new Color4(color,color,color,1));
+                faceIndex++;
             }
         }
     }
