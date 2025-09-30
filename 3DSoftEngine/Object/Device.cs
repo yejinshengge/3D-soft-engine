@@ -11,18 +11,32 @@ public class Device
     private byte[] backBuffer;
     // 深度缓冲区
     private float[] depthBuffer;
+    // 用来给像素处理加锁
+    private object[] lockBuffer;
     // 步长 每行像素所占字节数
     private int backBufferStride;
     
     private WriteableBitmap bmp;
+    // 窗口宽度
+    private int _pixelWidth;
+    // 窗口高度
+    private int _pixelHeight;
 
     public Device(WriteableBitmap bmp)
     {
         this.bmp = bmp;
+        _pixelWidth = bmp.PixelWidth;
+        _pixelHeight = bmp.PixelHeight;
         backBufferStride = bmp.PixelWidth * 4;
         // 长*宽*4(RGBA)
-        backBuffer = new byte[backBufferStride * bmp.PixelHeight];
-        depthBuffer = new float[bmp.PixelWidth* bmp.PixelHeight];
+        backBuffer = new byte[backBufferStride * _pixelHeight];
+        depthBuffer = new float[_pixelWidth * _pixelHeight];
+        // 初始化锁
+        lockBuffer = new Object[_pixelWidth * _pixelHeight];
+        for (int i = 0; i < lockBuffer.Length; i++)
+        {
+            lockBuffer[i] = new object();
+        }
     }
 
     /// <summary>
@@ -57,7 +71,7 @@ public class Device
     {
         // 使用 WritePixels 将我们的 byte[] 复制到 WriteableBitmap 中
         // 参数：要更新的区域、源数组、源数组的步长、目标位置的偏移量
-        bmp.WritePixels(new Int32Rect(0, 0, bmp.PixelWidth, bmp.PixelHeight), 
+        bmp.WritePixels(new Int32Rect(0, 0, _pixelWidth, _pixelHeight), 
             backBuffer, 
             backBufferStride, 
             0);
@@ -75,17 +89,21 @@ public class Device
     /// <param name="color"></param>
     public void PutPixel(int x, int y,float z, Color4 color)
     {
-        int index = x + y * bmp.PixelWidth;
+        int index = x + y * _pixelWidth;
         int index4 = index * 4;
-        // 深度大于缓存值,不渲染
-        if(z > depthBuffer[index]) return;
-        // 设置后备缓冲区
-        backBuffer[index4] = (byte)(color.Blue * 255);
-        backBuffer[index4 + 1] = (byte)(color.Green * 255);
-        backBuffer[index4 + 2] = (byte)(color.Red * 255);
-        backBuffer[index4 + 3] = (byte)(color.Alpha * 255);
-        // 设置深度缓冲区
-        depthBuffer[index] = z;
+        // 加锁
+        lock (lockBuffer[index])
+        {
+            // 深度大于缓存值,不渲染
+            if(z > depthBuffer[index]) return;
+            // 设置后备缓冲区
+            backBuffer[index4] = (byte)(color.Blue * 255);
+            backBuffer[index4 + 1] = (byte)(color.Green * 255);
+            backBuffer[index4 + 2] = (byte)(color.Red * 255);
+            backBuffer[index4 + 3] = (byte)(color.Alpha * 255);
+            // 设置深度缓冲区
+            depthBuffer[index] = z;
+        }
     }
     
     /// <summary>
@@ -100,9 +118,9 @@ public class Device
         var point = Vector3.TransformCoordinate(coord, transMat);
         // 变换后的结果位于标准化空间,x,y取值范围[-1,1]
         // 映射到屏幕空间,(0,0)为屏幕左上角
-        var x = point.X * bmp.PixelWidth + bmp.PixelWidth / 2.0f;
+        var x = point.X * _pixelWidth + _pixelWidth / 2.0f;
         // 取反是因为标准化空间中y轴正方向向上,而屏幕坐标中y轴正方向向下
-        var y = -point.Y * bmp.PixelHeight + bmp.PixelHeight / 2.0f;
+        var y = -point.Y * _pixelHeight + _pixelHeight / 2.0f;
         return new Vector3(x, y,point.Z);
     }
 
@@ -113,7 +131,7 @@ public class Device
     /// <param name="color"></param>
     public void DrawPoint(Vector3 point,Color4 color)
     {
-        if (point.X >= 0 && point.Y >= 0 && point.X < bmp.PixelWidth && point.Y < bmp.PixelHeight)
+        if (point.X >= 0 && point.Y >= 0 && point.X < _pixelWidth && point.Y < _pixelHeight)
             PutPixel((int)point.X, (int)point.Y, point.Z, color);
     }
     
@@ -331,18 +349,19 @@ public class Device
         // 创建相机坐标系转换矩阵(左手坐标系)
         var viewMatrix = Matrix.LookAtLH(camera.Position, camera.Target, Vector3.UnitY);
         // 创建投影矩阵
-        var projectionMatrix = Matrix.PerspectiveFovLH(0.78f, (float)bmp.PixelWidth / bmp.PixelHeight, 0.01f, 1.0f);
+        var projectionMatrix = Matrix.PerspectiveFovLH(0.78f, (float)_pixelWidth / _pixelHeight, 0.01f, 1.0f);
 
-        var faceIndex = 0;
         foreach (var mesh in meshes)
         {
             // 创建世界坐标变换矩阵
             var worldMatrix = Matrix.RotationYawPitchRoll(mesh.Rotation.Y, 
                                   mesh.Rotation.X, mesh.Rotation.Z) * Matrix.Translation(mesh.Position);
             var transformMatrix = worldMatrix * viewMatrix * projectionMatrix;
-            
-            foreach(var face in mesh.Faces)
+
+            // 并行绘制
+            Parallel.For(0, mesh.Faces.Length, faceIndex =>
             {
+                var face = mesh.Faces[faceIndex];
                 var verA = mesh.Vertices[face.A];
                 var verB = mesh.Vertices[face.B];
                 var verC = mesh.Vertices[face.C];
@@ -353,9 +372,8 @@ public class Device
                 // 绘制到屏幕上
                 // 随机一个颜色
                 var color = 0.25f + (faceIndex % mesh.Faces.Length) * 0.75f / mesh.Faces.Length;
-                _drawTriangle(point1,point2,point3,new Color4(color,color,color,1));
-                faceIndex++;
-            }
+                _drawTriangle(point1, point2, point3, new Color4(color, color, color, 1));
+            });
         }
     }
 }
