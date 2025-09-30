@@ -19,7 +19,7 @@ public class Mesh
     /// <summary>
     /// 顶点集合
     /// </summary>
-    public Vector3[] Vertices { get; set; }
+    public Vertex[] Vertices { get; set; }
     
     /// <summary>
     /// 三角面集合
@@ -33,7 +33,27 @@ public class Mesh
     public Mesh(string name, int verticesCnt, int faceCnt)
     {
         Name = name;
-        Vertices = new Vector3[verticesCnt];
+        Vertices = new Vertex[verticesCnt];
         Faces = new Face[faceCnt];
     }
+}
+
+/// <summary>
+/// 顶点
+/// </summary>
+public class Vertex
+{
+    /// <summary>
+    /// 当前坐标
+    /// </summary>
+    public Vector3 Coordinates;
+    /// <summary>
+    /// 世界坐标
+    /// </summary>
+    public Vector3 WorldCoordinates;
+    /// <summary>
+    /// 法线
+    /// </summary>
+    public Vector3 Normal;
+    
 }

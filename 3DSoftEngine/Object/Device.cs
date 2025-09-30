@@ -96,32 +96,42 @@ public class Device
         {
             // 深度大于缓存值,不渲染
             if(z > depthBuffer[index]) return;
+            // 设置深度缓冲区
+            depthBuffer[index] = z;
             // 设置后备缓冲区
             backBuffer[index4] = (byte)(color.Blue * 255);
             backBuffer[index4 + 1] = (byte)(color.Green * 255);
             backBuffer[index4 + 2] = (byte)(color.Red * 255);
             backBuffer[index4 + 3] = (byte)(color.Alpha * 255);
-            // 设置深度缓冲区
-            depthBuffer[index] = z;
         }
     }
-    
+
     /// <summary>
     /// 投影
     /// </summary>
-    /// <param name="coord"></param>
+    /// <param name="vertex"></param>
     /// <param name="transMat"></param>
+    /// <param name="worldMat"></param>
     /// <returns></returns>
-    public Vector3 Project(Vector3 coord, Matrix transMat)
+    public Vertex Project(Vertex vertex, Matrix transMat,Matrix worldMat)
     {
-        // 矩阵变换
-        var point = Vector3.TransformCoordinate(coord, transMat);
+        // 齐次裁剪空间
+        var point2D = Vector3.TransformCoordinate(vertex.Coordinates, transMat);
+        // 世界坐标
+        var point3D = Vector3.TransformCoordinate(vertex.Coordinates, worldMat);
+        var normal3D = Vector3.TransformCoordinate(vertex.Normal, worldMat);
+        
         // 变换后的结果位于标准化空间,x,y取值范围[-1,1]
         // 映射到屏幕空间,(0,0)为屏幕左上角
-        var x = point.X * _pixelWidth + _pixelWidth / 2.0f;
+        var x = point2D.X * _pixelWidth + _pixelWidth / 2.0f;
         // 取反是因为标准化空间中y轴正方向向上,而屏幕坐标中y轴正方向向下
-        var y = -point.Y * _pixelHeight + _pixelHeight / 2.0f;
-        return new Vector3(x, y,point.Z);
+        var y = -point2D.Y * _pixelHeight + _pixelHeight / 2.0f;
+        return new Vertex()
+        {
+            Coordinates = new Vector3(x, y, point2D.Z),
+            Normal = normal3D,
+            WorldCoordinates = point3D
+        };
     }
 
     /// <summary>
@@ -136,43 +146,24 @@ public class Device
     }
     
     /// <summary>
-    /// 限制值
-    /// </summary>
-    /// <param name="tar"></param>
-    /// <param name="min"></param>
-    /// <param name="max"></param>
-    /// <returns></returns>
-    private float _clamp(float tar, float min = 0f, float max = 1f)
-    {
-        return Math.Max(min, Math.Min(tar, max));
-    }
-
-    /// <summary>
-    /// 取插值
-    /// </summary>
-    /// <param name="min"></param>
-    /// <param name="max"></param>
-    /// <param name="percent"></param>
-    /// <returns></returns>
-    private float _interpolate(float min, float max, float percent)
-    {
-        return min + (max - min) * _clamp(percent);
-    }
-
-    /// <summary>
     /// 画线
     /// </summary>
-    /// <param name="curY"></param>
-    /// <param name="p1"></param>
-    /// <param name="p2"></param>
-    /// <param name="p3"></param>
-    /// <param name="p4"></param>
+    /// <param name="data"></param>
+    /// <param name="v1"></param>
+    /// <param name="v2"></param>
+    /// <param name="v3"></param>
+    /// <param name="v4"></param>
     /// <param name="color"></param>
-    private void _drawScanLine(int curY, Vector3 p1, Vector3 p2, Vector3 p3, Vector3 p4,Color4 color)
+    private void _drawScanLine(ScanLineData data, Vertex v1, Vertex v2, Vertex v3, Vertex v4,Color4 color)
     {
+        var p1 = v1.Coordinates;
+        var p2 = v2.Coordinates;
+        var p3 = v3.Coordinates;
+        var p4 = v4.Coordinates;
+        
         // y轴当前进度
-        var percent1 = p1.Y != p2.Y ? (curY - p1.Y) / (p2.Y - p1.Y) : 1;
-        var percent2 = p3.Y != p4.Y ? (curY - p3.Y) / (p4.Y - p3.Y) : 1;
+        var percent1 = p1.Y != p2.Y ? (data.CurrentY - p1.Y) / (p2.Y - p1.Y) : 1;
+        var percent2 = p3.Y != p4.Y ? (data.CurrentY - p3.Y) / (p4.Y - p3.Y) : 1;
         
         // 根据进度得出x起点和终点
         var x1 = (int)_interpolate(p1.X, p2.X, percent1);
@@ -187,24 +178,40 @@ public class Device
             // 根据进度得出z位置
             var percent = (x - x1) / (float)(x2 - x1);
             var z = _interpolate(z1, z2, percent);
-            DrawPoint(new Vector3(x,curY,z),color);
+            var dota = data.NDotLa;
+            DrawPoint(new Vector3(x,data.CurrentY,z),color * dota);
         }
     }
 
     /// <summary>
     /// 画三角形
     /// </summary>
-    /// <param name="p1"></param>
-    /// <param name="p2"></param>
-    /// <param name="p3"></param>
+    /// <param name="v1"></param>
+    /// <param name="v2"></param>
+    /// <param name="v3"></param>
     /// <param name="color"></param>
-    private void _drawTriangle(Vector3 p1,Vector3 p2,Vector3 p3,Color4 color)
+    private void _drawTriangle(Vertex v1,Vertex v2,Vertex v3,Color4 color)
     {
+
         // 按y轴排序 p1 p2 p3
         // 因为是屏幕坐标,所以y越小越靠上
-        if (p1.Y > p2.Y) (p1, p2) = (p2, p1);
-        if (p2.Y > p3.Y) (p2, p3) = (p3, p2);
-        if (p1.Y > p2.Y) (p1, p2) = (p2, p1);
+        if (v1.Coordinates.Y > v2.Coordinates.Y) (v1, v2) = (v2, v1);
+        if (v2.Coordinates.Y > v3.Coordinates.Y) (v2, v3) = (v3, v2);
+        if (v1.Coordinates.Y > v2.Coordinates.Y) (v1, v2) = (v2, v1);
+        
+        var p1 = v1.Coordinates;
+        var p2 = v2.Coordinates;
+        var p3 = v3.Coordinates;
+        // 面的法线
+        var faceNormal = (v1.Normal + v2.Normal + v3.Normal) / 3;
+        // 面的中点
+        var faceCenter = (v1.WorldCoordinates + v2.WorldCoordinates + v3.WorldCoordinates) / 3;
+        // 光源
+        var lightPos = new Vector3(0, 10, 10);
+        // 计算法线和光线方向的点积
+        var ndotl = _computeNDotL(faceCenter, faceNormal, lightPos);
+
+        var scanLineData = new ScanLineData() { NDotLa = ndotl };
         
         // 计算斜率
         float dP1P2, dP1P3;
@@ -233,10 +240,11 @@ public class Device
         {
             for (int y = (int)p1.Y; y <= (int)p3.Y; y++)
             {
+                scanLineData.CurrentY = y;
                 // 画上半部分
-                if(y < p2.Y) _drawScanLine(y,p1,p3,p1,p2,color);
+                if(y < p2.Y) _drawScanLine(scanLineData,v1,v3,v1,v2,color);
                 // 画下半部分
-                else _drawScanLine(y,p1,p3,p2,p3,color);
+                else _drawScanLine(scanLineData,v1,v3,v2,v3,color);
             }
         }
         // p2在右边
@@ -254,10 +262,11 @@ public class Device
         {
             for (int y = (int)p1.Y; y <= (int)p3.Y; y++)
             {
+                scanLineData.CurrentY = y;
                 // 画上半部分
-                if(y < p2.Y) _drawScanLine(y,p1,p2,p1,p3,color);
+                if(y < p2.Y) _drawScanLine(scanLineData,v1,v2,v1,v3,color);
                 // 画下半部分
-                else _drawScanLine(y,p2,p3,p1,p3,color);
+                else _drawScanLine(scanLineData,v2,v3,v1,v3,color);
             }
         }
 
@@ -269,7 +278,7 @@ public class Device
     /// </summary>
     /// <param name="fileName"></param>
     /// <returns></returns>
-    public async Task<Mesh[]> LoadMeshFromJSONFile(string fileName)
+    public async Task<Mesh[]> LoadMeshFromJsonFile(string fileName)
     {
         var meshes = new List<Mesh>();
         // 获取工程根目录路径
@@ -285,6 +294,8 @@ public class Device
         string jsonContent = await File.ReadAllTextAsync(filePath);
         var jsonObject = Newtonsoft.Json.JsonConvert.DeserializeObject<Babylon>(jsonContent);
 
+        if (jsonObject == null) throw new Exception("解析json出错!");
+        
         for (int i = 0; i < jsonObject.meshes.Count; i++)
         {
             var meshData = jsonObject.meshes[i];
@@ -321,10 +332,19 @@ public class Device
             // 填充顶点坐标
             for (int j = 0; j < verticesCnt; j++)
             {
+                // 坐标
                 var x = vertices[j * step];
                 var y = vertices[j * step + 1];
                 var z = vertices[j * step + 2];
-                mesh.Vertices[j] = new Vector3(x, y, z);
+                // 法线
+                var nx = vertices[j * step + 3];
+                var ny = vertices[j * step + 4];
+                var nz = vertices[j * step + 5];
+                mesh.Vertices[j] = new Vertex()
+                {
+                    Coordinates = new Vector3(x, y, z),
+                    Normal = new Vector3(nx,ny,nz)
+                };
             }
             
             // 填充面数据
@@ -366,14 +386,57 @@ public class Device
                 var verB = mesh.Vertices[face.B];
                 var verC = mesh.Vertices[face.C];
                 // 转换到2d屏幕空间
-                var point1 = Project(verA, transformMatrix);
-                var point2 = Project(verB, transformMatrix);
-                var point3 = Project(verC, transformMatrix);
+                var point1 = Project(verA, transformMatrix,worldMatrix);
+                var point2 = Project(verB, transformMatrix,worldMatrix);
+                var point3 = Project(verC, transformMatrix,worldMatrix);
                 // 绘制到屏幕上
                 // 随机一个颜色
-                var color = 0.25f + (faceIndex % mesh.Faces.Length) * 0.75f / mesh.Faces.Length;
-                _drawTriangle(point1, point2, point3, new Color4(color, color, color, 1));
+                // var color = 0.25f + (faceIndex % mesh.Faces.Length) * 0.75f / mesh.Faces.Length;
+                _drawTriangle(point1, point2, point3, new Color4(1f, 1f, 1f, 1f));
             });
         }
+    }
+    
+    /// <summary>
+    /// 限制值
+    /// </summary>
+    /// <param name="tar"></param>
+    /// <param name="min"></param>
+    /// <param name="max"></param>
+    /// <returns></returns>
+    private float _clamp(float tar, float min = 0f, float max = 1f)
+    {
+        return Math.Max(min, Math.Min(tar, max));
+    }
+
+    /// <summary>
+    /// 取插值
+    /// </summary>
+    /// <param name="min"></param>
+    /// <param name="max"></param>
+    /// <param name="percent"></param>
+    /// <returns></returns>
+    private float _interpolate(float min, float max, float percent)
+    {
+        return min + (max - min) * _clamp(percent);
+    }
+
+    /// <summary>
+    /// 计算法线和光线方向的点积
+    /// </summary>
+    /// <param name="vertex"></param>
+    /// <param name="normal"></param>
+    /// <param name="lightPos"></param>
+    /// <returns></returns>
+    private float _computeNDotL(Vector3 vertex, Vector3 normal, Vector3 lightPos)
+    {
+        // 光线方向
+        var lightDir = lightPos - vertex;
+        
+        // 归一化
+        normal.Normalize();
+        lightDir.Normalize();
+
+        return Math.Max(0, Vector3.Dot(normal, lightDir));
     }
 }

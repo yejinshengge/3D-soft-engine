@@ -33,7 +33,7 @@ public partial class MainWindow : Window
         frontBuffer.Source = bmp;
         
         // 4. 初始化网格顶点
-        _meshes = await _device.LoadMeshFromJSONFile("Resource/monkey.babylon");
+        _meshes = await _device.LoadMeshFromJsonFile("Resource\\monkey.babylon");
         
         _camera.Position = new Vector3(0, 0, 10.0f);
         _camera.Target = Vector3.Zero;
