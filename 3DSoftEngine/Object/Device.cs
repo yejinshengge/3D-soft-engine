@@ -172,13 +172,17 @@ public class Device
         // 根据进度得出z起点和终点
         var z1 = _interpolate(p1.Z, p2.Z, percent1);
         var z2 = _interpolate(p3.Z, p4.Z, percent2);
+        
+        // 根据进度得出法线和光线的点积
+        var snl = _interpolate(data.NDotLa, data.NDotLb, percent1);
+        var enl = _interpolate(data.NDotLc, data.NDotLd, percent2);
 
         for (int x = x1; x < x2; x++)
         {
             // 根据进度得出z位置
             var percent = (x - x1) / (float)(x2 - x1);
             var z = _interpolate(z1, z2, percent);
-            var dota = data.NDotLa;
+            var dota = _interpolate(snl, enl, percent);
             DrawPoint(new Vector3(x,data.CurrentY,z),color * dota);
         }
     }
@@ -202,16 +206,14 @@ public class Device
         var p1 = v1.Coordinates;
         var p2 = v2.Coordinates;
         var p3 = v3.Coordinates;
-        // 面的法线
-        var faceNormal = (v1.Normal + v2.Normal + v3.Normal) / 3;
-        // 面的中点
-        var faceCenter = (v1.WorldCoordinates + v2.WorldCoordinates + v3.WorldCoordinates) / 3;
         // 光源
         var lightPos = new Vector3(0, 10, 10);
         // 计算法线和光线方向的点积
-        var ndotl = _computeNDotL(faceCenter, faceNormal, lightPos);
+        var nl1 = _computeNDotL(v1.WorldCoordinates, v1.Normal, lightPos);
+        var nl2 = _computeNDotL(v2.WorldCoordinates, v2.Normal, lightPos);
+        var nl3 = _computeNDotL(v3.WorldCoordinates, v3.Normal, lightPos);
 
-        var scanLineData = new ScanLineData() { NDotLa = ndotl };
+        var scanLineData = new ScanLineData();
         
         // 计算斜率
         float dP1P2, dP1P3;
@@ -242,9 +244,23 @@ public class Device
             {
                 scanLineData.CurrentY = y;
                 // 画上半部分
-                if(y < p2.Y) _drawScanLine(scanLineData,v1,v3,v1,v2,color);
+                if (y < p2.Y)
+                {
+                    scanLineData.NDotLa = nl1;
+                    scanLineData.NDotLb = nl3;
+                    scanLineData.NDotLc = nl1;
+                    scanLineData.NDotLd = nl2;
+                    _drawScanLine(scanLineData,v1,v3,v1,v2,color);
+                }
                 // 画下半部分
-                else _drawScanLine(scanLineData,v1,v3,v2,v3,color);
+                else
+                {
+                    scanLineData.NDotLa = nl1;
+                    scanLineData.NDotLb = nl3;
+                    scanLineData.NDotLc = nl2;
+                    scanLineData.NDotLd = nl3;
+                    _drawScanLine(scanLineData,v1,v3,v2,v3,color);
+                }
             }
         }
         // p2在右边
@@ -264,9 +280,23 @@ public class Device
             {
                 scanLineData.CurrentY = y;
                 // 画上半部分
-                if(y < p2.Y) _drawScanLine(scanLineData,v1,v2,v1,v3,color);
+                if (y < p2.Y)
+                {
+                    scanLineData.NDotLa = nl1;
+                    scanLineData.NDotLb = nl2;
+                    scanLineData.NDotLc = nl1;
+                    scanLineData.NDotLd = nl3;
+                    _drawScanLine(scanLineData,v1,v2,v1,v3,color);
+                }
                 // 画下半部分
-                else _drawScanLine(scanLineData,v2,v3,v1,v3,color);
+                else
+                {
+                    scanLineData.NDotLa = nl2;
+                    scanLineData.NDotLb = nl3;
+                    scanLineData.NDotLc = nl1;
+                    scanLineData.NDotLd = nl3;
+                    _drawScanLine(scanLineData,v2,v3,v1,v3,color);
+                }
             }
         }
 

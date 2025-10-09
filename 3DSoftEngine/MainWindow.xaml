@@ -6,7 +6,7 @@
         xmlns:local="clr-namespace:_3DSoftEngine"
         mc:Ignorable="d"
         Title="MainWindow" Height="450" Width="800">
-    <Grid>
+    <Grid Background="Black">
         <!-- FPS 显示文本框 -->
         <TextBlock x:Name="fpsTextBlock" 
                    HorizontalAlignment="Right" 
