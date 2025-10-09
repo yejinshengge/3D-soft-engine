@@ -5,7 +5,7 @@ namespace SoftEngine;
 /// <summary>
 /// 三角面对应的三个顶点
 /// </summary>
-public class Face
+public struct Face
 {
     public int A;
     public int B;
@@ -26,6 +26,11 @@ public class Mesh
     /// </summary>
     public Face[] Faces { get; set; }
     
+    /// <summary>
+    /// 贴图
+    /// </summary>
+    public Texture Texture { get; set; }
+    
     public Vector3 Position { get; set; }
     
     public Vector3 Rotation { get; set; }
@@ -41,7 +46,7 @@ public class Mesh
 /// <summary>
 /// 顶点
 /// </summary>
-public class Vertex
+public struct Vertex
 {
     /// <summary>
     /// 当前坐标
@@ -55,5 +60,9 @@ public class Vertex
     /// 法线
     /// </summary>
     public Vector3 Normal;
-    
+    /// <summary>
+    /// 纹理坐标
+    /// </summary>
+    public Vector2 TextureCoordinates;
+
 }

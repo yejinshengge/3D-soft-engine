@@ -1,5 +1,8 @@
 namespace SoftEngine;
 
+/// <summary>
+/// 扫描线数据
+/// </summary>
 public struct ScanLineData
 {
     public int CurrentY;
@@ -10,4 +13,17 @@ public struct ScanLineData
     public float NDotLb;
     public float NDotLc;
     public float NDotLd;
+
+    /// <summary>
+    /// uv
+    /// </summary>
+    public float Ua;
+    public float Ub;
+    public float Uc;
+    public float Ud;
+    
+    public float Va;
+    public float Vb;
+    public float Vc;
+    public float Vd;
 }

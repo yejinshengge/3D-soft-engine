@@ -130,7 +130,9 @@ public class Device
         {
             Coordinates = new Vector3(x, y, point2D.Z),
             Normal = normal3D,
-            WorldCoordinates = point3D
+            WorldCoordinates = point3D,
+            // 纹理坐标原样传递
+            TextureCoordinates = vertex.TextureCoordinates
         };
     }
 
@@ -144,7 +146,7 @@ public class Device
         if (point.X >= 0 && point.Y >= 0 && point.X < _pixelWidth && point.Y < _pixelHeight)
             PutPixel((int)point.X, (int)point.Y, point.Z, color);
     }
-    
+
     /// <summary>
     /// 画线
     /// </summary>
@@ -154,7 +156,8 @@ public class Device
     /// <param name="v3"></param>
     /// <param name="v4"></param>
     /// <param name="color"></param>
-    private void _drawScanLine(ScanLineData data, Vertex v1, Vertex v2, Vertex v3, Vertex v4,Color4 color)
+    /// <param name="texture"></param>
+    private void _drawScanLine(ScanLineData data, Vertex v1, Vertex v2, Vertex v3, Vertex v4,Color4 color,Texture texture)
     {
         var p1 = v1.Coordinates;
         var p2 = v2.Coordinates;
@@ -176,14 +179,29 @@ public class Device
         // 根据进度得出法线和光线的点积
         var snl = _interpolate(data.NDotLa, data.NDotLb, percent1);
         var enl = _interpolate(data.NDotLc, data.NDotLd, percent2);
+        
+        // 根据进度得出uv
+        var su = _interpolate(data.Ua, data.Ub, percent1);
+        var eu = _interpolate(data.Uc, data.Ud, percent2);
+        var sv = _interpolate(data.Va, data.Vb, percent2);
+        var ev = _interpolate(data.Vc, data.Vd, percent2);
 
         for (int x = x1; x < x2; x++)
         {
             // 根据进度得出z位置
             var percent = (x - x1) / (float)(x2 - x1);
             var z = _interpolate(z1, z2, percent);
-            var dota = _interpolate(snl, enl, percent);
-            DrawPoint(new Vector3(x,data.CurrentY,z),color * dota);
+            var ndotl = _interpolate(snl, enl, percent);
+            var u = _interpolate(su, eu, percent);
+            var v = _interpolate(sv, ev, percent);
+
+            Color4 textureColor;
+            if (texture != null)
+                textureColor = texture.Map(u, v);
+            else
+                textureColor = new Color4(1, 1, 1, 1);
+            
+            DrawPoint(new Vector3(x,data.CurrentY,z),color * ndotl * textureColor);
         }
     }
 
@@ -194,7 +212,8 @@ public class Device
     /// <param name="v2"></param>
     /// <param name="v3"></param>
     /// <param name="color"></param>
-    private void _drawTriangle(Vertex v1,Vertex v2,Vertex v3,Color4 color)
+    /// <param name="texture"></param>
+    private void _drawTriangle(Vertex v1,Vertex v2,Vertex v3,Color4 color,Texture texture)
     {
 
         // 按y轴排序 p1 p2 p3
@@ -250,7 +269,17 @@ public class Device
                     scanLineData.NDotLb = nl3;
                     scanLineData.NDotLc = nl1;
                     scanLineData.NDotLd = nl2;
-                    _drawScanLine(scanLineData,v1,v3,v1,v2,color);
+
+                    scanLineData.Ua = v1.TextureCoordinates.X;
+                    scanLineData.Ub = v3.TextureCoordinates.X;
+                    scanLineData.Uc = v1.TextureCoordinates.X;
+                    scanLineData.Ud = v2.TextureCoordinates.X;
+                    
+                    scanLineData.Va = v1.TextureCoordinates.Y;
+                    scanLineData.Vb = v3.TextureCoordinates.Y;
+                    scanLineData.Vc = v1.TextureCoordinates.Y;
+                    scanLineData.Vd = v2.TextureCoordinates.Y;
+                    _drawScanLine(scanLineData,v1,v3,v1,v2,color,texture);
                 }
                 // 画下半部分
                 else
@@ -259,7 +288,17 @@ public class Device
                     scanLineData.NDotLb = nl3;
                     scanLineData.NDotLc = nl2;
                     scanLineData.NDotLd = nl3;
-                    _drawScanLine(scanLineData,v1,v3,v2,v3,color);
+                    
+                    scanLineData.Ua = v1.TextureCoordinates.X;
+                    scanLineData.Ub = v3.TextureCoordinates.X;
+                    scanLineData.Uc = v2.TextureCoordinates.X;
+                    scanLineData.Ud = v3.TextureCoordinates.X;
+                    
+                    scanLineData.Va = v1.TextureCoordinates.Y;
+                    scanLineData.Vb = v3.TextureCoordinates.Y;
+                    scanLineData.Vc = v2.TextureCoordinates.Y;
+                    scanLineData.Vd = v3.TextureCoordinates.Y;
+                    _drawScanLine(scanLineData,v1,v3,v2,v3,color,texture);
                 }
             }
         }
@@ -286,7 +325,17 @@ public class Device
                     scanLineData.NDotLb = nl2;
                     scanLineData.NDotLc = nl1;
                     scanLineData.NDotLd = nl3;
-                    _drawScanLine(scanLineData,v1,v2,v1,v3,color);
+                    
+                    scanLineData.Ua = v1.TextureCoordinates.X;
+                    scanLineData.Ub = v2.TextureCoordinates.X;
+                    scanLineData.Uc = v1.TextureCoordinates.X;
+                    scanLineData.Ud = v3.TextureCoordinates.X;
+                    
+                    scanLineData.Va = v1.TextureCoordinates.Y;
+                    scanLineData.Vb = v2.TextureCoordinates.Y;
+                    scanLineData.Vc = v1.TextureCoordinates.Y;
+                    scanLineData.Vd = v3.TextureCoordinates.Y;
+                    _drawScanLine(scanLineData,v1,v2,v1,v3,color,texture);
                 }
                 // 画下半部分
                 else
@@ -295,7 +344,17 @@ public class Device
                     scanLineData.NDotLb = nl3;
                     scanLineData.NDotLc = nl1;
                     scanLineData.NDotLd = nl3;
-                    _drawScanLine(scanLineData,v2,v3,v1,v3,color);
+                    
+                    scanLineData.Ua = v2.TextureCoordinates.X;
+                    scanLineData.Ub = v3.TextureCoordinates.X;
+                    scanLineData.Uc = v1.TextureCoordinates.X;
+                    scanLineData.Ud = v3.TextureCoordinates.X;
+                    
+                    scanLineData.Va = v2.TextureCoordinates.Y;
+                    scanLineData.Vb = v3.TextureCoordinates.Y;
+                    scanLineData.Vc = v1.TextureCoordinates.Y;
+                    scanLineData.Vd = v3.TextureCoordinates.Y;
+                    _drawScanLine(scanLineData,v2,v3,v1,v3,color,texture);
                 }
             }
         }
@@ -311,6 +370,7 @@ public class Device
     public async Task<Mesh[]> LoadMeshFromJsonFile(string fileName)
     {
         var meshes = new List<Mesh>();
+        var materials = new Dictionary<String,Material>();
         // 获取工程根目录路径
         string currentDirectory = AppDomain.CurrentDomain.BaseDirectory;
         string filePath = Path.Combine(currentDirectory, fileName);
@@ -325,6 +385,13 @@ public class Device
         var jsonObject = Newtonsoft.Json.JsonConvert.DeserializeObject<Babylon>(jsonContent);
 
         if (jsonObject == null) throw new Exception("解析json出错!");
+        
+        // 材质
+        for (var materialIndex = 0; materialIndex < jsonObject.materials.Count; materialIndex++)
+        {
+            var material = jsonObject.materials[materialIndex];
+            materials.Add(material.id, material);
+        }
         
         for (int i = 0; i < jsonObject.meshes.Count; i++)
         {
@@ -375,6 +442,15 @@ public class Device
                     Coordinates = new Vector3(x, y, z),
                     Normal = new Vector3(nx,ny,nz)
                 };
+                
+                
+                if (uvCnt > 0)
+                {
+                    // uv
+                    float u = vertices[j * step + 6];
+                    float v = vertices[j * step + 7];
+                    mesh.Vertices[j].TextureCoordinates = new Vector2(u, v);
+                }
             }
             
             // 填充面数据
@@ -388,6 +464,13 @@ public class Device
             // 设置位置
             var pos = meshData.position;
             mesh.Position = new Vector3(pos[0], pos[1], pos[2]);
+
+            if (uvCnt > 0)
+            {
+                var meshTextureId = meshData.materialId;
+                var meshTextureName = materials[meshTextureId].diffuseTexture.name;
+                mesh.Texture = new Texture($"Resource\\{meshTextureName}", 512, 512);
+            }
             meshes.Add(mesh);
         }
 
@@ -422,7 +505,7 @@ public class Device
                 // 绘制到屏幕上
                 // 随机一个颜色
                 // var color = 0.25f + (faceIndex % mesh.Faces.Length) * 0.75f / mesh.Faces.Length;
-                _drawTriangle(point1, point2, point3, new Color4(1f, 1f, 1f, 1f));
+                _drawTriangle(point1, point2, point3, new Color4(1f, 1f, 1f, 1f),mesh.Texture);
             });
         }
     }
