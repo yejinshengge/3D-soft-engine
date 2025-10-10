@@ -200,8 +200,10 @@ public class Device
                 textureColor = texture.Map(u, v);
             else
                 textureColor = new Color4(1, 1, 1, 1);
-            
-            DrawPoint(new Vector3(x,data.CurrentY,z),color * ndotl * textureColor);
+
+            var brightness = color * ndotl;
+            brightness.Alpha = 1;
+            DrawPoint(new Vector3(x,data.CurrentY,z),brightness * textureColor);
         }
     }
 
@@ -471,6 +473,7 @@ public class Device
                 var meshTextureName = materials[meshTextureId].diffuseTexture.name;
                 mesh.Texture = new Texture($"Resource\\{meshTextureName}", 512, 512);
             }
+            mesh.ComputeFacesNormal();
             meshes.Add(mesh);
         }
 
@@ -489,7 +492,10 @@ public class Device
             // 创建世界坐标变换矩阵
             var worldMatrix = Matrix.RotationYawPitchRoll(mesh.Rotation.Y, 
                                   mesh.Rotation.X, mesh.Rotation.Z) * Matrix.Translation(mesh.Position);
-            var transformMatrix = worldMatrix * viewMatrix * projectionMatrix;
+            // 相机空间变换矩阵
+            var worldViewMatrix = worldMatrix * viewMatrix;
+            // 投影变换矩阵
+            var transformMatrix = worldViewMatrix * projectionMatrix;
 
             // 并行绘制
             Parallel.For(0, mesh.Faces.Length, faceIndex =>
@@ -498,6 +504,26 @@ public class Device
                 var verA = mesh.Vertices[face.A];
                 var verB = mesh.Vertices[face.B];
                 var verC = mesh.Vertices[face.C];
+                
+                // 背面剔除（考虑透视相机）
+                // 计算三角形中心点在世界空间的位置
+                var worldCenter = (Vector3.TransformCoordinate(verA.Coordinates, worldMatrix) +
+                                   Vector3.TransformCoordinate(verB.Coordinates, worldMatrix) +
+                                   Vector3.TransformCoordinate(verC.Coordinates, worldMatrix)) / 3.0f;
+                
+                // 计算从相机到三角形中心的视线向量
+                var viewDirection = worldCenter - camera.Position;
+                
+                // 将法线变换到世界空间
+                var worldNormal = Vector3.TransformNormal(face.Normal, worldMatrix);
+                
+                // 计算视线向量与法线的点积
+                // 如果点积 > 0，说明法线背向相机，是背面，应该剔除
+                if (Vector3.Dot(viewDirection, worldNormal) > 0)
+                {
+                    return;
+                }
+                
                 // 转换到2d屏幕空间
                 var point1 = Project(verA, transformMatrix,worldMatrix);
                 var point2 = Project(verB, transformMatrix,worldMatrix);
